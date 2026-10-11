@@ -2,6 +2,7 @@
 #include <Python.h>
 #include "symnmf.h"
 
+/* Read matrix dimensions from a Python sequence; return success flag. */
 static int sequence_shape(PyObject *obj, int *rows, int *cols)
 {
     PyObject *outer;
@@ -24,6 +25,7 @@ static int sequence_shape(PyObject *obj, int *rows, int *cols)
     return 1;
 }
 
+/* Convert Python matrix entries into preallocated C matrix. */
 static int fill_c_matrix(PyObject *obj, double **matrix, int rows, int cols)
 {
     PyObject *outer;
@@ -58,10 +60,14 @@ static int fill_c_matrix(PyObject *obj, double **matrix, int rows, int cols)
     return 1;
 }
 
+/* Allocate C matrix and copy Python values; return NULL on failure. */
 static double **py_to_c_matrix(PyObject *obj, int *rows, int *cols)
 {
     double **matrix;
     if (!sequence_shape(obj, rows, cols)) {
+        if (!PyErr_Occurred()) {
+            PyErr_SetString(PyExc_ValueError, "invalid matrix shape");
+        }
         return NULL;
     }
     matrix = allocate_matrix(*rows, *cols);
@@ -70,12 +76,16 @@ static double **py_to_c_matrix(PyObject *obj, int *rows, int *cols)
         return NULL;
     }
     if (!fill_c_matrix(obj, matrix, *rows, *cols)) {
+        if (!PyErr_Occurred()) {
+            PyErr_SetString(PyExc_ValueError, "invalid matrix rows");
+        }
         free_matrix(matrix, *rows);
         return NULL;
     }
     return matrix;
 }
 
+/* Convert a C matrix to a nested Python list. */
 static PyObject *c_to_py_matrix(double **matrix, int rows, int cols)
 {
     PyObject *outer;
@@ -107,6 +117,7 @@ static PyObject *c_to_py_matrix(double **matrix, int rows, int cols)
     return outer;
 }
 
+/* Parse points and return a Python matrix for the requested goal. */
 static PyObject *matrix_goal(PyObject *args, int goal)
 {
     PyObject *points_obj;
@@ -133,29 +144,34 @@ static PyObject *matrix_goal(PyObject *args, int goal)
     return result_obj;
 }
 
+/* Python wrapper for similarity matrix; args contain points. */
 static PyObject *py_sym(PyObject *self, PyObject *args)
 {
     (void)self;
     return matrix_goal(args, 0);
 }
 
+/* Python wrapper for degree matrix; args contain points. */
 static PyObject *py_ddg(PyObject *self, PyObject *args)
 {
     (void)self;
     return matrix_goal(args, 1);
 }
 
+/* Python wrapper for normalized matrix; args contain points. */
 static PyObject *py_norm(PyObject *self, PyObject *args)
 {
     (void)self;
     return matrix_goal(args, 2);
 }
 
+/* Return whether H and W dimensions are compatible. */
 static int valid_symnmf_shapes(int hn, int hk, int wn, int wk)
 {
     return hn == wn && wn == wk && hk > 0;
 }
 
+/* Run SymNMF from Python-supplied H and W matrices. */
 static PyObject *py_symnmf(PyObject *self, PyObject *args)
 {
     PyObject *h_obj;
@@ -177,7 +193,9 @@ static PyObject *py_symnmf(PyObject *self, PyObject *args)
     if (h == NULL || w == NULL || !valid_symnmf_shapes(hn, hk, wn, wk)) {
         free_matrix(h, hn);
         free_matrix(w, wn);
-        PyErr_SetString(PyExc_ValueError, "invalid matrix dimensions");
+        if (!PyErr_Occurred()) {
+            PyErr_SetString(PyExc_ValueError, "invalid matrix dimensions");
+        }
         return NULL;
     }
     result = symnmf(h, w, hn, hk, SYMNMF_EPSILON, SYMNMF_MAX_ITER);
@@ -211,6 +229,7 @@ static struct PyModuleDef symnmfmodule = {
     NULL
 };
 
+/* Initialize and return the extension module. */
 PyMODINIT_FUNC PyInit_symnmfmodule(void)
 {
     return PyModule_Create(&symnmfmodule);

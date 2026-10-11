@@ -5,12 +5,17 @@ MAX_ITER = 300
 
 
 def _closest_centroid(point, centroids):
+    """Return the index of the nearest centroid, breaking ties by index."""
     distances = np.sum((centroids - point) ** 2, axis=1)
     return int(np.argmin(distances))
 
 
 def kmeans(points, k, max_iter=MAX_ITER, epsilon=EPSILON):
-    """Cluster points using the HW1-style Lloyd K-means algorithm."""
+    """Return labels for points using k first-point initial centroids.
+
+    Empty clusters preserve their old centroid; stop at the movement
+    threshold or max_iter, then assign final labels.
+    """
     data = np.asarray(points, dtype=float)
     centroids = data[:k].copy()
     labels = np.zeros(len(data), dtype=int)

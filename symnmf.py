@@ -2,8 +2,6 @@ import sys
 import numpy as np
 import symnmfmodule as symnmf
 
-np.random.seed(1234)
-
 ERROR_MESSAGE = "An Error Has Occurred"
 
 
@@ -19,6 +17,7 @@ def format_matrix(matrix):
 
 def initialize_h(w, k):
     """Initialize H exactly as specified in Section 1.4.1."""
+    np.random.seed(1234)
     m = float(np.mean(w))
     upper = 2.0 * np.sqrt(m / k)
     return np.random.uniform(0.0, upper, size=(len(w), k)).tolist()
@@ -40,16 +39,29 @@ def calculate_goal(points, goal, k):
     raise ValueError("illegal goal")
 
 
+def parse_k(value):
+    """Accept integer-valued numeric input, including values such as 3.0."""
+    number = float(value)
+    if not np.isfinite(number) or not number.is_integer():
+        raise ValueError("illegal k")
+    return int(number)
+
+
 def main():
     """Run the command-line interface."""
     try:
         if len(sys.argv) != 4:
             raise ValueError("wrong number of arguments")
-        k = int(sys.argv[1])
+        try:
+            k = parse_k(sys.argv[1])
+        except (ValueError, OverflowError):
+            print("Incorrect number of clusters!")
+            return
         goal = sys.argv[2]
         points = read_points(sys.argv[3])
         if k <= 1 or k >= len(points):
-            raise ValueError("illegal k")
+            print("Incorrect number of clusters!")
+            return
         result = calculate_goal(points, goal, k)
         print(format_matrix(result))
     except Exception:

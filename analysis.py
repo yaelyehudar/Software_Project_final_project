@@ -4,8 +4,6 @@ from sklearn.metrics import adjusted_rand_score, silhouette_score
 import symnmfmodule as symnmf
 from kmeans import kmeans
 
-np.random.seed(1234)
-
 ERROR_MESSAGE = "An Error Has Occurred"
 
 
@@ -16,6 +14,7 @@ def read_points(file_name):
 
 def initialize_h(w, k):
     """Initialize H according to the SymNMF specification."""
+    np.random.seed(1234)
     m = float(np.mean(w))
     upper = 2.0 * np.sqrt(m / k)
     return np.random.uniform(0.0, upper, size=(len(w), k)).tolist()
@@ -28,6 +27,11 @@ def nmf_labels(points, k):
     return np.argmax(np.asarray(h), axis=1)
 
 
+def valid_k(k, n):
+    """Return whether k satisfies the project cluster-count constraint."""
+    return 1 < k < n
+
+
 def main():
     """Compare SymNMF and K-means using silhouette score and ARI."""
     try:
@@ -35,6 +39,9 @@ def main():
             raise ValueError("wrong number of arguments")
         k = int(sys.argv[1])
         points = read_points(sys.argv[2])
+        if not valid_k(k, len(points)):
+            print("Incorrect number of clusters!")
+            return
         nmf = nmf_labels(points, k)
         km = np.asarray(kmeans(points, k))
         print(f"nmf: {silhouette_score(points, nmf):.4f}")

@@ -5,6 +5,7 @@
 #include "symnmf.h"
 
 #define INITIAL_CAPACITY 16
+#define DIVISION_EPSILON 1e-12
 #define ERROR_MESSAGE "An Error Has Occurred"
 
 typedef struct PointData {
@@ -13,11 +14,13 @@ typedef struct PointData {
     int cols;
 } PointData;
 
+/* Print the standard error message. Input: none; output: stdout. */
 static void print_error(void)
 {
     printf("%s\n", ERROR_MESSAGE);
 }
 
+/* Allocate a zero-filled contiguous rows-by-cols matrix; return NULL on failure. */
 double **allocate_matrix(int rows, int cols)
 {
     double **matrix;
@@ -36,6 +39,7 @@ double **allocate_matrix(int rows, int cols)
     return matrix;
 }
 
+/* Release matrix allocated by allocate_matrix; NULL is accepted. */
 void free_matrix(double **matrix, int rows)
 {
     (void)rows;
@@ -45,6 +49,7 @@ void free_matrix(double **matrix, int rows)
     }
 }
 
+/* Return squared Euclidean distance of two vectors of length d. */
 static double squared_distance(const double *a, const double *b, int d)
 {
     double sum;
@@ -58,6 +63,7 @@ static double squared_distance(const double *a, const double *b, int d)
     return sum;
 }
 
+/* Return the N-by-N similarity matrix of N points with dimension d. */
 double **sym(double **points, int n, int d)
 {
     double **a;
@@ -78,6 +84,7 @@ double **sym(double **points, int n, int d)
     return a;
 }
 
+/* Return vector of row sums for an N-by-N similarity matrix. */
 static double *degrees_from_similarity(double **a, int n)
 {
     double *degrees;
@@ -95,6 +102,7 @@ static double *degrees_from_similarity(double **a, int n)
     return degrees;
 }
 
+/* Return N-by-N degree matrix derived from the input points. */
 double **ddg(double **points, int n, int d)
 {
     double **a;
@@ -120,6 +128,7 @@ double **ddg(double **points, int n, int d)
     return degree_matrix;
 }
 
+/* Fill W using A and its degrees; return 0 for invalid denominators. */
 static int fill_normalized(double **w, double **a, double *degrees, int n)
 {
     double denominator;
@@ -141,6 +150,7 @@ static int fill_normalized(double **w, double **a, double *degrees, int n)
     return 1;
 }
 
+/* Return normalized similarity matrix of points, or NULL on failure. */
 double **norm(double **points, int n, int d)
 {
     double **a;
@@ -163,6 +173,7 @@ double **norm(double **points, int n, int d)
     return w;
 }
 
+/* Multiply r-by-m matrix A with m-by-c B; return allocated result. */
 static double **multiply(double **a, double **b, int r, int m, int c)
 {
     double **result;
@@ -183,6 +194,7 @@ static double **multiply(double **a, double **b, int r, int m, int c)
     return result;
 }
 
+/* Return H-transpose times H for an n-by-k matrix H. */
 static double **transpose_multiply(double **h, int n, int k)
 {
     double **result;
@@ -203,6 +215,7 @@ static double **transpose_multiply(double **h, int n, int k)
     return result;
 }
 
+/* Update H via multiplicative rule, storing squared Frobenius change. */
 static double update_entries(double **h, double **next_h,
                              double **wh, double **hhth, int n, int k)
 {
@@ -214,10 +227,7 @@ static double update_entries(double **h, double **next_h,
     squared_change = 0.0;
     for (i = 0; i < n; ++i) {
         for (j = 0; j < k; ++j) {
-            if (hhth[i][j] <= 0.0) {
-                return -1.0;
-            }
-            ratio = wh[i][j] / hhth[i][j];
+            ratio = wh[i][j] / (hhth[i][j] + DIVISION_EPSILON);
             next_h[i][j] = h[i][j] * (1.0 - SYMNMF_BETA + SYMNMF_BETA * ratio);
             diff = next_h[i][j] - h[i][j];
             squared_change += diff * diff;
@@ -226,6 +236,7 @@ static double update_entries(double **h, double **next_h,
     return squared_change;
 }
 
+/* Perform one SymNMF update; return next H and set change. */
 static double **single_update(double **h, double **w, int n, int k,
                               double *change)
 {
@@ -252,6 +263,7 @@ static double **single_update(double **h, double **w, int n, int k,
     return next_h;
 }
 
+/* Iterate updates until max_iter or squared change below epsilon. */
 double **symnmf(double **h, double **w, int n, int k,
                 double epsilon, int max_iter)
 {
@@ -279,6 +291,7 @@ double **symnmf(double **h, double **w, int n, int k,
     return current;
 }
 
+/* Read a line of arbitrary length, without newline; NULL at EOF/failure. */
 static char *read_line(FILE *file)
 {
     char *line;
@@ -312,6 +325,7 @@ static char *read_line(FILE *file)
     return line;
 }
 
+/* Count comma-separated values in a nonempty input line. */
 static int count_columns(const char *line)
 {
     int columns;
@@ -328,6 +342,7 @@ static int count_columns(const char *line)
     return columns;
 }
 
+/* Parse exactly cols comma-separated floating-point values into row. */
 static int parse_line(const char *line, double *row, int cols)
 {
     char *end;
@@ -353,6 +368,7 @@ static int parse_line(const char *line, double *row, int cols)
     return *cursor == '\0';
 }
 
+/* Grow row storage when full, append row, and return success flag. */
 static int append_row(double ***rows, int *size, int *capacity, double *row)
 {
     double **grown;
@@ -369,6 +385,7 @@ static int append_row(double ***rows, int *size, int *capacity, double *row)
     return 1;
 }
 
+/* Free individually allocated rows and their pointer array. */
 static void free_rows(double **rows, int count)
 {
     int i;
@@ -378,6 +395,7 @@ static void free_rows(double **rows, int count)
     free(rows);
 }
 
+/* Read point rows and dimensions from file; return success flag. */
 static int read_rows(FILE *file, double ***rows_out, int *n_out, int *d_out)
 {
     double **rows;
@@ -407,12 +425,17 @@ static int read_rows(FILE *file, double ***rows_out, int *n_out, int *d_out)
         }
         free(line);
     }
+    if (n == 0 || ferror(file)) {
+        free_rows(rows, n);
+        return 0;
+    }
     *rows_out = rows;
     *n_out = n;
     *d_out = d;
-    return n > 0;
+    return 1;
 }
 
+/* Copy parsed rows into a contiguous matrix owned by PointData. */
 static int copy_rows(PointData *data, double **rows)
 {
     int i;
@@ -426,6 +449,7 @@ static int copy_rows(PointData *data, double **rows)
     return 1;
 }
 
+/* Open input filename, parse rows, and populate PointData. */
 static int load_points(const char *filename, PointData *data)
 {
     FILE *file;
@@ -446,6 +470,7 @@ static int load_points(const char *filename, PointData *data)
     return ok;
 }
 
+/* Print rows-by-cols matrix with four decimal places. */
 static void print_matrix(double **matrix, int rows, int cols)
 {
     int i;
@@ -461,6 +486,7 @@ static void print_matrix(double **matrix, int rows, int cols)
     }
 }
 
+/* Dispatch sym, ddg, norm based on goal; return allocated matrix. */
 static double **run_goal(const char *goal, PointData *data)
 {
     if (strcmp(goal, "sym") == 0) {
@@ -475,6 +501,7 @@ static double **run_goal(const char *goal, PointData *data)
     return NULL;
 }
 
+/* Validate CLI arguments, compute requested matrix and print it. */
 int main(int argc, char **argv)
 {
     PointData data;
