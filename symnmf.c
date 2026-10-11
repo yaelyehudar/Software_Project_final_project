@@ -5,7 +5,7 @@
 #include "symnmf.h"
 
 #define INITIAL_CAPACITY 16
-define INITIAL_LINE_CAPACITY 128
+#define INITIAL_LINE_CAPACITY 128
 
 /* Takes care of zero division */
 #define DIVISION_EPSILON 1e-12
