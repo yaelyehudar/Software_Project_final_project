@@ -5,6 +5,9 @@
 #include "symnmf.h"
 
 #define INITIAL_CAPACITY 16
+define INITIAL_LINE_CAPACITY 128
+
+/* Takes care of zero division */
 #define DIVISION_EPSILON 1e-12
 #define ERROR_MESSAGE "An Error Has Occurred"
 
@@ -20,7 +23,7 @@ static void print_error(void)
     printf("%s\n", ERROR_MESSAGE);
 }
 
-/* Allocate a zero-filled contiguous rows-by-cols matrix; return NULL on failure. */
+/* Allocate a zero-filled matrix, contiguous block. returns matrix or NULL on failure */
 double **allocate_matrix(int rows, int cols)
 {
     double **matrix;
@@ -39,7 +42,7 @@ double **allocate_matrix(int rows, int cols)
     return matrix;
 }
 
-/* Release matrix allocated by allocate_matrix; NULL is accepted. */
+/* Frees contiguous block of matrix allocated by allocate_matrix */
 void free_matrix(double **matrix, int rows)
 {
     (void)rows;
@@ -129,25 +132,18 @@ double **ddg(double **points, int n, int d)
 }
 
 /* Fill W using A and its degrees; return 0 for invalid denominators. */
-static int fill_normalized(double **w, double **a, double *degrees, int n)
+static void fill_normalized(double **w, double **a, double *degrees, int n)
 {
     double denominator;
     int i;
     int j;
     for (i = 0; i < n; ++i) {
-        if (degrees[i] <= 0.0) {
-            return 0;
-        }
         for (j = i + 1; j < n; ++j) {
-            denominator = sqrt(degrees[i] * degrees[j]);
-            if (denominator <= 0.0) {
-                return 0;
-            }
+            denominator = sqrt(degrees[i] * degrees[j]) + DIVISION_EPSILON;
             w[i][j] = a[i][j] / denominator;
             w[j][i] = w[i][j];
         }
     }
-    return 1;
 }
 
 /* Return normalized similarity matrix of points, or NULL on failure. */
@@ -162,12 +158,13 @@ double **norm(double **points, int n, int d)
     }
     degrees = degrees_from_similarity(a, n);
     w = allocate_matrix(n, n);
-    if (degrees == NULL || w == NULL || !fill_normalized(w, a, degrees, n)) {
+    if (degrees == NULL || w == NULL) {
         free(degrees);
         free_matrix(a, n);
         free_matrix(w, n);
         return NULL;
     }
+    fill_normalized(w, a, degrees, n);
     free(degrees);
     free_matrix(a, n);
     return w;
@@ -271,11 +268,14 @@ double **symnmf(double **h, double **w, int n, int k,
     double **next_h;
     double change;
     int iteration;
+    int i;
     current = allocate_matrix(n, k);
     if (current == NULL) {
         return NULL;
     }
-    memcpy(current[0], h[0], (size_t)n * (size_t)k * sizeof(double));
+    for (i = 0; i < n; ++i) {
+        memcpy(current[i], h[i], (size_t)k * sizeof(double));
+    }
     for (iteration = 0; iteration < max_iter; ++iteration) {
         next_h = single_update(current, w, n, k, &change);
         if (next_h == NULL) {
@@ -299,7 +299,7 @@ static char *read_line(FILE *file)
     int ch;
     int length;
     int capacity;
-    capacity = 128;
+    capacity = INITIAL_LINE_CAPACITY;
     length = 0;
     line = (char *)malloc((size_t)capacity);
     if (line == NULL) {
@@ -395,15 +395,32 @@ static void free_rows(double **rows, int count)
     free(rows);
 }
 
-/* Read point rows and dimensions from file; return success flag. */
+/* Return 1 if line was parsed and appended, 0 otherwise. */
+static int consume_line(const char *line, double ***rows, int *n,
+                        int *capacity, int *d)
+{
+    double *row;
+    if (*d == 0) {
+        *d = count_columns(line);
+    }
+    row = (double *)malloc((size_t)(*d) * sizeof(double));
+    if (row == NULL || !parse_line(line, row, *d) ||
+        !append_row(rows, n, capacity, row)) {
+        free(row);
+        return 0;
+    }
+    return 1;
+}
+
+/* Read point rows and dimensions from file; return success flag.*/
 static int read_rows(FILE *file, double ***rows_out, int *n_out, int *d_out)
 {
     double **rows;
-    double *row;
     char *line;
     int n;
     int d;
     int capacity;
+    int ok;
     n = 0;
     d = 0;
     capacity = INITIAL_CAPACITY;
@@ -412,18 +429,12 @@ static int read_rows(FILE *file, double ***rows_out, int *n_out, int *d_out)
         return 0;
     }
     while ((line = read_line(file)) != NULL) {
-        if (d == 0) {
-            d = count_columns(line);
-        }
-        row = (double *)malloc((size_t)d * sizeof(double));
-        if (d == 0 || row == NULL || !parse_line(line, row, d) ||
-            !append_row(&rows, &n, &capacity, row)) {
-            free(line);
-            free(row);
+        ok = (line[0] == '\0') || consume_line(line, &rows, &n, &capacity, &d);
+        free(line);
+        if (!ok) {
             free_rows(rows, n);
             return 0;
         }
-        free(line);
     }
     if (n == 0 || ferror(file)) {
         free_rows(rows, n);
